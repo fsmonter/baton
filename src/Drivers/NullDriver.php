@@ -2,113 +2,103 @@
 
 declare(strict_types=1);
 
-namespace AgentSubprocess\Drivers;
+namespace Baton\Drivers;
 
-use AgentSubprocess\Contracts\AgentDriver;
-use AgentSubprocess\Contracts\OutputParser;
-use AgentSubprocess\Data\Process;
-use AgentSubprocess\Data\TerminationResult;
-use AgentSubprocess\Events\Output\MessageEvent;
-use AgentSubprocess\Log\LogPosition;
-use AgentSubprocess\Log\LogReadResult;
-use AgentSubprocess\Models\AgentRun;
-use AgentSubprocess\Parsers\ClaudeStreamParser;
+use Baton\Contracts\Driver;
+use Baton\Contracts\OutputReader;
+use Baton\Output\MessageEvent;
+use Baton\PendingProcess;
+use Baton\Process;
+use Baton\Result;
+use Baton\Usage;
 use Carbon\Carbon;
-use Generator;
+use Illuminate\Support\Str;
 
-class NullDriver implements AgentDriver
+class NullDriver implements Driver
 {
-    protected array $spawned = [];
-
+    protected array $running = [];
+    protected array $results = [];
     protected array $outputs = [];
 
     public function __construct(
         protected array $config = [],
     ) {}
 
-    public function spawn(AgentRun $run): Process
+    public function spawn(PendingProcess $pending): Process
     {
+        $id = Str::uuid()->toString();
+
         $process = new Process(
-            pid: rand(10000, 99999),
+            id: $id,
             driver: 'null',
-            command: ['null-agent', $run->prompt],
-            workDir: getcwd(),
-            outputPath: null,
-            logPath: null,
+            handle: ['simulated' => true],
+            workDir: $pending->getDirectory() ?? getcwd(),
             startedAt: Carbon::now(),
-            meta: ['simulated' => true],
+            driverInstance: $this,
         );
 
-        $this->spawned[$process->pid] = $process;
+        $this->running[$id] = true;
 
         return $process;
     }
 
     public function isRunning(Process $process): bool
     {
-        return isset($this->spawned[$process->pid]);
+        return $this->running[$process->id] ?? false;
     }
 
     public function terminate(Process $process): bool
     {
-        unset($this->spawned[$process->pid]);
+        unset($this->running[$process->id]);
 
         return true;
     }
 
-    public function terminateGracefully(Process $process, int $gracePeriodMs = 500): TerminationResult
+    public function readOutput(Process $process): OutputReader
     {
-        unset($this->spawned[$process->pid]);
-
-        return new TerminationResult(true, 'simulated');
+        return new NullOutputReader($this->outputs[$process->id] ?? []);
     }
 
-    public function parseOutput(Process $process): Generator
+    public function getResult(Process $process): ?Result
     {
-        $outputs = $this->outputs[$process->pid] ?? [];
-
-        foreach ($outputs as $output) {
-            yield $output;
-        }
+        return $this->results[$process->id] ?? null;
     }
 
-    public function readLogIncremental(Process $process, LogPosition $position): LogReadResult
-    {
-        return new LogReadResult($position, []);
-    }
-
-    public function getLiveOutput(Process $process, int $lines = 50): string
-    {
-        return '';
-    }
-
-    public function getParser(): OutputParser
-    {
-        return new ClaudeStreamParser;
-    }
-
-    public function getCapabilities(): array
+    public function capabilities(): array
     {
         return [
             'streaming' => false,
             'tools' => false,
-            'models' => [],
             'testing' => true,
         ];
     }
 
-    public function simulateComplete(Process $process, string $message = 'Completed'): void
+    // Test helpers
+
+    public function complete(Process $process, string $output = 'Done', bool $success = true): void
     {
-        $this->outputs[$process->pid][] = new MessageEvent(
-            content: $message,
-            role: 'assistant',
+        unset($this->running[$process->id]);
+
+        $this->results[$process->id] = new Result(
+            success: $success,
+            output: $output,
         );
 
-        unset($this->spawned[$process->pid]);
+        $this->outputs[$process->id][] = new MessageEvent(content: $output);
     }
 
-    public function simulateOutput(Process $process, MessageEvent $event): void
+    public function fail(Process $process, string $error = 'Failed'): void
     {
-        $this->outputs[$process->pid][] = $event;
+        unset($this->running[$process->id]);
+
+        $this->results[$process->id] = new Result(
+            success: false,
+            error: $error,
+        );
+    }
+
+    public function addOutput(Process $process, MessageEvent $event): void
+    {
+        $this->outputs[$process->id][] = $event;
     }
 }

@@ -2,29 +2,25 @@
 
 declare(strict_types=1);
 
-namespace AgentSubprocess\Parsers;
+namespace Baton\Parsers;
 
-use AgentSubprocess\Contracts\OutputParser;
-use AgentSubprocess\Data\Usage;
-use AgentSubprocess\Events\Output\ErrorEvent;
-use AgentSubprocess\Events\Output\MessageEvent;
-use AgentSubprocess\Events\Output\OutputEvent;
-use AgentSubprocess\Events\Output\ResultEvent;
-use AgentSubprocess\Events\Output\SystemEvent;
-use AgentSubprocess\Events\Output\ToolResultEvent;
-use AgentSubprocess\Events\Output\ToolUseEvent;
+use Baton\Output\ErrorEvent;
+use Baton\Output\MessageEvent;
+use Baton\Output\OutputEvent;
+use Baton\Output\ResultEvent;
+use Baton\Output\ToolResultEvent;
+use Baton\Output\ToolUseEvent;
+use Baton\Usage;
 
-class ClaudeStreamParser implements OutputParser
+class ClaudeStreamParser
 {
     protected string $textBuffer = '';
-
     protected array $seenToolIds = [];
-
     protected Usage $usage;
 
     public function __construct()
     {
-        $this->usage = new Usage;
+        $this->usage = new Usage();
     }
 
     public function parse(string $line): OutputEvent|array|null
@@ -38,7 +34,7 @@ class ClaudeStreamParser implements OutputParser
         $type = $data['type'] ?? null;
 
         return match ($type) {
-            'system' => $this->parseSystem($data),
+            'system' => null, // skip system events in v2
             'stream_event' => $this->parseStreamEvent($data),
             'tool_use' => $this->parseToolUse($data),
             'tool_result' => $this->parseToolResult($data),
@@ -69,32 +65,12 @@ class ClaudeStreamParser implements OutputParser
     {
         $this->textBuffer = '';
         $this->seenToolIds = [];
-        $this->usage = new Usage;
+        $this->usage = new Usage();
     }
 
     public function getUsage(): ?Usage
     {
         return $this->usage->totalTokens() > 0 ? $this->usage : null;
-    }
-
-    public function supportsStreaming(): bool
-    {
-        return true;
-    }
-
-    protected function parseSystem(array $data): SystemEvent
-    {
-        return new SystemEvent(
-            model: $data['model'] ?? 'unknown',
-            tools: $data['tools'] ?? [],
-            mcpServers: $data['mcp_servers'] ?? [],
-            version: $data['claude_code_version'] ?? null,
-            meta: [
-                'cwd' => $data['cwd'] ?? null,
-                'session_id' => $data['session_id'] ?? null,
-            ],
-            raw: json_encode($data),
-        );
     }
 
     protected function parseStreamEvent(array $data): OutputEvent|array|null
@@ -256,7 +232,7 @@ class ClaudeStreamParser implements OutputParser
                 outputTokens: $resultUsage['output_tokens'] ?? $this->usage->outputTokens,
                 cacheReadTokens: $resultUsage['cache_read_input_tokens'] ?? $this->usage->cacheReadTokens,
                 cacheWriteTokens: $resultUsage['cache_creation_input_tokens'] ?? $this->usage->cacheWriteTokens,
-                costUsd: $data['total_cost_usd'] ?? null,
+                cost: $data['total_cost_usd'] ?? null,
             );
         }
 

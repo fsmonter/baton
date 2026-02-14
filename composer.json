@@ -1,13 +1,12 @@
 {
-    "name": "vendor/agent-subprocess",
-    "description": "Agent-agnostic subprocess management for Laravel applications",
-    "keywords": ["laravel", "agent", "subprocess", "claude", "ai"],
+    "name": "fsmonter/baton",
+    "description": "Thin process orchestrator for AI agents in Laravel",
+    "keywords": ["laravel", "agent", "process", "claude", "ai", "baton"],
     "license": "MIT",
     "type": "library",
     "require": {
         "php": "^8.2",
         "illuminate/contracts": "^11.0|^12.0",
-        "illuminate/database": "^11.0|^12.0",
         "illuminate/support": "^11.0|^12.0",
         "symfony/process": "^7.0"
     },
@@ -18,12 +17,12 @@
     },
     "autoload": {
         "psr-4": {
-            "AgentSubprocess\\": "src/"
+            "Baton\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "AgentSubprocess\\Tests\\": "tests/",
+            "Baton\\Tests\\": "tests/",
             "Workbench\\App\\": "workbench/app/",
             "Workbench\\Database\\Factories\\": "workbench/database/factories/",
             "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
@@ -32,10 +31,10 @@
     "extra": {
         "laravel": {
             "providers": [
-                "AgentSubprocess\\AgentServiceProvider"
+                "Baton\\BatonServiceProvider"
             ],
             "aliases": {
-                "Agent": "AgentSubprocess\\Facades\\Agent"
+                "Baton": "Baton\\Baton"
             }
         }
     },

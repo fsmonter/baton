@@ -2,206 +2,102 @@
 
 declare(strict_types=1);
 
-namespace AgentSubprocess\Drivers;
+namespace Baton\Drivers;
 
-use AgentSubprocess\Contracts\AgentDriver;
-use AgentSubprocess\Contracts\OutputParser;
-use AgentSubprocess\Data\Process;
-use AgentSubprocess\Data\TerminationResult;
-use AgentSubprocess\Events\Output\OutputEvent;
-use AgentSubprocess\Events\Output\ResultEvent;
-use AgentSubprocess\Log\LogPosition;
-use AgentSubprocess\Log\LogReader;
-use AgentSubprocess\Log\LogReadResult;
-use AgentSubprocess\Models\AgentRun;
-use AgentSubprocess\Parsers\ClaudeStreamParser;
-use AgentSubprocess\Process\ProcessTerminator;
+use Baton\Contracts\Driver;
+use Baton\Contracts\OutputReader;
+use Baton\Output\ResultEvent;
+use Baton\Parsers\ClaudeStreamParser;
+use Baton\PendingProcess;
+use Baton\Process;
+use Baton\Result;
+use Baton\Usage;
 use Carbon\Carbon;
-use Generator;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process as LaravelProcess;
-use SplFileObject;
+use Illuminate\Support\Str;
 
-class ClaudeCodeDriver implements AgentDriver
+class ClaudeCodeDriver implements Driver
 {
     protected ClaudeStreamParser $parser;
 
     public function __construct(
         protected array $config = [],
     ) {
-        $this->parser = new ClaudeStreamParser;
+        $this->parser = new ClaudeStreamParser();
     }
 
-    public function spawn(AgentRun $run): Process
+    public function spawn(PendingProcess $pending): Process
     {
-        $workDir = $run->config['work_dir'] ?? $this->config['work_dir'] ?? getcwd();
-        $outputPath = $this->getOutputPath($run);
-        $logPath = $this->getLogPath($run);
+        $id = Str::uuid()->toString();
+        $workDir = $pending->getDirectory() ?? $this->config['work_dir'] ?? getcwd();
+        $outputPath = $this->getOutputPath($id);
 
         File::ensureDirectoryExists(dirname($outputPath));
-        File::ensureDirectoryExists(dirname($logPath));
 
-        $promptPath = $this->writePromptFile($run);
-        $schemaPath = $this->writeSchemaFile($run);
-        $wrapperScript = $this->createWrapperScript($run, $workDir, $promptPath, $outputPath, $schemaPath);
+        $promptPath = $this->writePromptFile($id, $pending->getPrompt() ?? '');
+        $schemaPath = $pending->getSchema() ? $this->writeSchemaFile($id, $pending->getSchema()) : null;
+        $wrapperScript = $this->createWrapperScript($id, $pending, $workDir, $promptPath, $outputPath, $schemaPath);
 
         $pid = $this->executeInBackground($wrapperScript);
 
-        return new Process(
-            pid: (int) $pid,
+        $process = new Process(
+            id: $id,
             driver: 'claude-code',
-            command: [$wrapperScript],
-            workDir: $workDir,
-            outputPath: $outputPath,
-            logPath: $logPath,
-            startedAt: Carbon::now(),
-            meta: [
-                'model' => $run->config['model'] ?? $this->config['model'] ?? 'sonnet',
+            handle: [
+                'pid' => (int) $pid,
+                'output_path' => $outputPath,
                 'prompt_path' => $promptPath,
                 'schema_path' => $schemaPath,
                 'wrapper_script' => $wrapperScript,
             ],
+            workDir: $workDir,
+            startedAt: Carbon::now(),
+            driverInstance: $this,
         );
+
+        return $process;
     }
 
     public function isRunning(Process $process): bool
     {
-        if (! $process->pid) {
+        $pid = $process->handle['pid'] ?? null;
+
+        if (! $pid) {
             return false;
         }
 
-        return posix_kill($process->pid, 0);
+        return posix_kill($pid, 0);
     }
 
     public function terminate(Process $process): bool
     {
-        if (! $process->pid) {
+        $pid = $process->handle['pid'] ?? null;
+
+        if (! $pid) {
             return false;
         }
 
-        return posix_kill($process->pid, SIGTERM);
+        return posix_kill($pid, SIGTERM);
     }
 
-    public function terminateGracefully(Process $process, int $gracePeriodMs = 500): TerminationResult
+    public function readOutput(Process $process): OutputReader
     {
-        if (! $process->pid) {
-            return new TerminationResult(true, 'no_pid');
-        }
-
-        $terminator = new ProcessTerminator;
-
-        return $terminator->terminate($process->pid, $gracePeriodMs);
+        return new ClaudeCodeOutputReader(
+            $process->handle['output_path'] ?? null,
+            $this->parser,
+        );
     }
 
-    public function parseOutput(Process $process): Generator
+    public function getResult(Process $process): ?Result
     {
-        if (! $process->outputPath || ! file_exists($process->outputPath)) {
-            return;
-        }
+        $outputPath = $process->handle['output_path'] ?? null;
 
-        $this->parser->reset();
-
-        $handle = fopen($process->outputPath, 'r');
-
-        if (! $handle) {
-            return;
-        }
-
-        try {
-            while (! feof($handle)) {
-                $line = fgets($handle);
-
-                if ($line === false || trim($line) === '') {
-                    continue;
-                }
-
-                $parsed = $this->parser->parse($line);
-
-                $events = match (true) {
-                    $parsed === null => [],
-                    $parsed instanceof OutputEvent => [$parsed],
-                    is_array($parsed) => $parsed,
-                    default => [],
-                };
-
-                foreach ($events as $event) {
-                    yield $event;
-                }
-            }
-
-            foreach ($this->parser->flush() as $event) {
-                yield $event;
-            }
-        } finally {
-            fclose($handle);
-        }
-    }
-
-    public function readLogIncremental(Process $process, LogPosition $position): LogReadResult
-    {
-        if (! $process->outputPath) {
-            return new LogReadResult($position, []);
-        }
-
-        $reader = new LogReader($this->parser);
-
-        return $reader->readIncremental($process->outputPath, $position);
-    }
-
-    public function getLiveOutput(Process $process, int $lines = 50): string
-    {
-        if (! $process->outputPath || ! file_exists($process->outputPath)) {
-            return '';
-        }
-
-        $file = new SplFileObject($process->outputPath, 'r');
-        $file->seek(PHP_INT_MAX);
-        $totalLines = $file->key();
-
-        if ($totalLines === 0) {
-            return '';
-        }
-
-        $startLine = max(0, $totalLines - $lines);
-        $output = [];
-
-        $file->seek($startLine);
-
-        while (! $file->eof()) {
-            $line = $file->current();
-            if (trim($line) !== '') {
-                $output[] = $line;
-            }
-            $file->next();
-        }
-
-        return implode('', $output);
-    }
-
-    public function getParser(): OutputParser
-    {
-        return $this->parser;
-    }
-
-    public function getCapabilities(): array
-    {
-        return [
-            'streaming' => true,
-            'tools' => true,
-            'structured_output' => true,
-            'models' => ['haiku', 'sonnet', 'opus'],
-            'max_turns' => true,
-            'background_execution' => true,
-        ];
-    }
-
-    public function extractStructuredOutput(Process $process): ?array
-    {
-        if (! $process->outputPath || ! file_exists($process->outputPath)) {
+        if (! $outputPath || ! file_exists($outputPath)) {
             return null;
         }
 
-        $lines = file($process->outputPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $lines = file($outputPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 
         foreach (array_reverse($lines) as $line) {
             try {
@@ -215,52 +111,49 @@ class ClaudeCodeDriver implements AgentDriver
             }
 
             $subtype = $data['subtype'] ?? 'success';
-            $structuredOutput = $data['structured_output'] ?? null;
+            $isError = ($data['is_error'] ?? false) || $subtype === 'error_max_structured_output_retries';
 
-            if ($subtype === 'error_max_structured_output_retries') {
-                return [
-                    'success' => false,
-                    'error' => 'max_structured_output_retries',
-                    'data' => null,
-                ];
-            }
+            $resultUsage = $data['usage'] ?? [];
+            $usage = new Usage(
+                inputTokens: $resultUsage['input_tokens'] ?? 0,
+                outputTokens: $resultUsage['output_tokens'] ?? 0,
+                cacheReadTokens: $resultUsage['cache_read_input_tokens'] ?? 0,
+                cacheWriteTokens: $resultUsage['cache_creation_input_tokens'] ?? 0,
+                cost: $data['total_cost_usd'] ?? null,
+            );
 
-            if ($structuredOutput && $subtype === 'success') {
-                return [
-                    'success' => true,
-                    'error' => null,
-                    'data' => $structuredOutput,
-                ];
-            }
+            // Collect text output from all message events
+            $textOutput = $this->collectTextOutput($lines);
 
-            if ($subtype === 'success' && ! $structuredOutput) {
-                return [
-                    'success' => false,
-                    'error' => 'no_structured_output',
-                    'data' => null,
-                ];
-            }
+            return new Result(
+                success: ! $isError,
+                output: $textOutput,
+                structured: $data['structured_output'] ?? null,
+                usage: $usage,
+                durationMs: isset($data['duration_ms']) ? (int) $data['duration_ms'] : null,
+                error: $isError ? ($data['error'] ?? $subtype) : null,
+            );
         }
 
         return null;
     }
 
-    public function parseCurrentActivity(Process $process, int $tailLines = 50): array
+    public function capabilities(): array
     {
-        if (! $process->outputPath || ! file_exists($process->outputPath)) {
-            return [
-                'status' => 'unknown',
-                'activity' => 'Log file not found',
-            ];
-        }
+        return [
+            'streaming' => true,
+            'tools' => true,
+            'structured_output' => true,
+            'models' => ['haiku', 'sonnet', 'opus'],
+            'max_turns' => true,
+        ];
+    }
 
-        $output = $this->getLiveOutput($process, $tailLines);
-        $lines = array_filter(explode("\n", $output));
+    protected function collectTextOutput(array $lines): ?string
+    {
+        $texts = [];
 
-        $currentActivity = 'Initializing...';
-        $status = 'running';
-
-        foreach (array_reverse($lines) as $line) {
+        foreach ($lines as $line) {
             try {
                 $data = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
             } catch (\JsonException) {
@@ -269,80 +162,54 @@ class ClaudeCodeDriver implements AgentDriver
 
             $type = $data['type'] ?? null;
 
-            if ($type === 'result') {
-                $isError = $data['is_error'] ?? false;
-                $status = $isError ? 'failed' : 'completed';
-                $currentActivity = $isError ? 'Failed with error' : 'Completed successfully';
-                break;
-            }
-
-            if ($type === 'tool_use') {
-                $currentActivity = 'Using tool: '.($data['name'] ?? 'unknown');
-                break;
-            }
-
-            if ($type === 'tool_result') {
-                $currentActivity = 'Completed: '.($data['tool_name'] ?? 'tool');
-                break;
-            }
-
-            if ($type === 'stream_event') {
-                $eventType = $data['event']['type'] ?? null;
-                if ($eventType === 'content_block_delta') {
-                    $currentActivity = 'Writing response...';
-                    break;
+            if ($type === 'assistant') {
+                foreach (($data['message']['content'] ?? []) as $block) {
+                    if (($block['type'] ?? '') === 'text') {
+                        $texts[] = $block['text'] ?? '';
+                    }
                 }
             }
         }
 
-        return [
-            'status' => $status,
-            'activity' => $currentActivity,
-        ];
+        return $texts ? implode("\n", $texts) : null;
     }
 
-    protected function writePromptFile(AgentRun $run): string
+    protected function writePromptFile(string $id, string $prompt): string
     {
-        $promptDir = $this->config['prompt_dir'] ?? storage_path('agent-subprocess/prompts');
+        $promptDir = $this->config['prompt_dir'] ?? storage_path('baton/prompts');
         File::ensureDirectoryExists($promptDir);
 
-        $promptPath = "{$promptDir}/{$run->id}.txt";
-        file_put_contents($promptPath, $run->prompt);
+        $path = "{$promptDir}/{$id}.txt";
+        file_put_contents($path, $prompt);
 
-        return $promptPath;
+        return $path;
     }
 
-    protected function writeSchemaFile(AgentRun $run): ?string
+    protected function writeSchemaFile(string $id, array $schema): string
     {
-        $schema = $run->config['json_schema'] ?? null;
-
-        if (! $schema) {
-            return null;
-        }
-
-        $schemaDir = $this->config['schema_dir'] ?? storage_path('agent-subprocess/schemas');
+        $schemaDir = $this->config['schema_dir'] ?? storage_path('baton/schemas');
         File::ensureDirectoryExists($schemaDir);
 
-        $schemaPath = "{$schemaDir}/{$run->id}.json";
-        file_put_contents($schemaPath, json_encode($schema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $path = "{$schemaDir}/{$id}.json";
+        file_put_contents($path, json_encode($schema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
-        return $schemaPath;
+        return $path;
     }
 
     protected function createWrapperScript(
-        AgentRun $run,
+        string $id,
+        PendingProcess $pending,
         string $workDir,
         string $promptPath,
         string $outputPath,
-        ?string $schemaPath
+        ?string $schemaPath,
     ): string {
-        $scriptDir = $this->config['script_dir'] ?? storage_path('agent-subprocess/scripts');
+        $scriptDir = $this->config['script_dir'] ?? storage_path('baton/scripts');
         File::ensureDirectoryExists($scriptDir);
 
-        $scriptPath = "{$scriptDir}/{$run->id}.sh";
-
+        $scriptPath = "{$scriptDir}/{$id}.sh";
         $binary = $this->config['binary'] ?? 'claude';
-        $command = $this->buildCommandString($run, $schemaPath);
+        $command = $this->buildCommandString($pending, $schemaPath);
 
         $script = <<<BASH
 #!/bin/bash
@@ -356,43 +223,29 @@ BASH;
         return $scriptPath;
     }
 
-    protected function buildCommandString(AgentRun $run, ?string $schemaPath): string
+    protected function buildCommandString(PendingProcess $pending, ?string $schemaPath): string
     {
-        $parts = ['-p'];
-
-        if ($this->config['verbose'] ?? true) {
-            $parts[] = '--verbose';
-        }
-
-        $parts[] = '--output-format';
-        $parts[] = 'stream-json';
+        $parts = ['-p', '--verbose', '--output-format', 'stream-json'];
 
         if ($this->config['include_partial_messages'] ?? true) {
             $parts[] = '--include-partial-messages';
         }
 
-        $settingSources = $run->config['setting_sources'] ?? $this->config['setting_sources'] ?? 'local';
         $parts[] = '--setting-sources';
-        $parts[] = escapeshellarg($settingSources);
+        $parts[] = escapeshellarg($this->config['setting_sources'] ?? 'local');
 
-        if ($run->config['disable_slash_commands'] ?? $this->config['disable_slash_commands'] ?? true) {
+        if ($this->config['disable_slash_commands'] ?? true) {
             $parts[] = '--disable-slash-commands';
         }
 
-        if ($run->config['no_session_persistence'] ?? $this->config['no_session_persistence'] ?? true) {
+        if ($this->config['no_session_persistence'] ?? true) {
             $parts[] = '--no-session-persistence';
         }
 
-        $tools = $run->config['tools'] ?? $this->config['tools'] ?? null;
+        $tools = $pending->getTools() ?? ($this->config['tools'] ?? null);
         if ($tools) {
             $parts[] = '--tools';
             $parts[] = escapeshellarg(is_array($tools) ? implode(',', $tools) : $tools);
-        }
-
-        $allowedTools = $run->config['allowed_tools'] ?? $this->config['allowed_tools'] ?? null;
-        if ($allowedTools) {
-            $parts[] = '--allowedTools';
-            $parts[] = escapeshellarg(is_array($allowedTools) ? implode(',', $allowedTools) : $allowedTools);
         }
 
         if ($schemaPath) {
@@ -400,13 +253,13 @@ BASH;
             $parts[] = '"$(cat '.escapeshellarg($schemaPath).')"';
         }
 
-        $maxTurns = $run->config['max_turns'] ?? $this->config['max_turns'] ?? null;
+        $maxTurns = $pending->getMaxTurns() ?? ($this->config['max_turns'] ?? null);
         if ($maxTurns) {
             $parts[] = '--max-turns';
             $parts[] = (string) $maxTurns;
         }
 
-        $model = $run->config['model'] ?? $this->config['model'] ?? null;
+        $model = $pending->getModel() ?? ($this->config['model'] ?? null);
         if ($model) {
             $parts[] = '--model';
             $parts[] = escapeshellarg($model);
@@ -428,17 +281,10 @@ BASH;
         return $pid;
     }
 
-    protected function getOutputPath(AgentRun $run): string
+    protected function getOutputPath(string $id): string
     {
-        $basePath = $this->config['output_dir'] ?? storage_path('agent-subprocess/output');
+        $basePath = $this->config['output_dir'] ?? storage_path('baton/output');
 
-        return "{$basePath}/{$run->id}.jsonl";
-    }
-
-    protected function getLogPath(AgentRun $run): string
-    {
-        $basePath = $this->config['log_dir'] ?? storage_path('agent-subprocess/logs');
-
-        return "{$basePath}/{$run->id}.log";
+        return "{$basePath}/{$id}.jsonl";
     }
 }

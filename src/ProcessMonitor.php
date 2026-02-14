@@ -7,6 +7,7 @@ namespace Baton;
 use Baton\Contracts\ProcessStore;
 use Baton\Events\ProcessCompleted;
 use Baton\Events\ProcessFailed;
+use Baton\Exceptions\ProcessCrashedException;
 use Illuminate\Contracts\Events\Dispatcher;
 
 class ProcessMonitor
@@ -50,16 +51,21 @@ class ProcessMonitor
      */
     public function checkProcess(Process $process): ProcessStatus
     {
-        $status = $process->status();
-
-        if ($status === ProcessStatus::Running) {
-            return $status;
+        if ($process->isRunning()) {
+            return ProcessStatus::Running;
         }
 
         // Process finished — resolve result and fire events
-        $result = $process->result();
+        try {
+            $result = $process->result();
+        } catch (ProcessCrashedException $e) {
+            $this->fire(new ProcessFailed($process, null, $e->getMessage()));
+            $this->store->remove($process->id);
 
-        if ($status === ProcessStatus::Completed && $result !== null) {
+            return ProcessStatus::Failed;
+        }
+
+        if ($result !== null && $result->success) {
             $this->fire(new ProcessCompleted($process, $result));
         } else {
             $error = $result?->error ?? 'Process terminated unexpectedly';
@@ -69,7 +75,7 @@ class ProcessMonitor
         // Remove from store — it's done
         $this->store->remove($process->id);
 
-        return $status;
+        return $result?->success ? ProcessStatus::Completed : ProcessStatus::Failed;
     }
 
     /**

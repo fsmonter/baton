@@ -6,6 +6,7 @@ namespace Baton\Drivers;
 
 use Baton\Contracts\Driver;
 use Baton\Contracts\OutputReader;
+use Baton\Exceptions\ProcessCrashedException;
 use Baton\Output\ResultEvent;
 use Baton\Parsers\ClaudeStreamParser;
 use Baton\PendingProcess;
@@ -152,14 +153,14 @@ class ClaudeCodeDriver implements Driver
             );
         }
 
-        // No result event in output — check exit file for crash detection
+        // No result event in output — check exit file for crash detection.
+        // A non-zero exit without a result event means the process crashed
+        // before it could report anything. This is distinct from a normal
+        // agent failure (where the agent writes an error result event).
         $exitCode = $this->readExitCode($process);
 
         if ($exitCode !== null && $exitCode !== 0) {
-            return new Result(
-                success: false,
-                error: "Process exited with code {$exitCode}",
-            );
+            throw new ProcessCrashedException($process->id, $exitCode);
         }
 
         return null;

@@ -6,6 +6,7 @@ namespace Baton;
 
 use Baton\Contracts\Driver;
 use Baton\Contracts\OutputReader;
+use Baton\Exceptions\ProcessCrashedException;
 use Carbon\Carbon;
 
 class Process
@@ -30,7 +31,11 @@ class Process
             return ProcessStatus::Running;
         }
 
-        $result = $this->result();
+        try {
+            $result = $this->result();
+        } catch (ProcessCrashedException) {
+            return ProcessStatus::Failed;
+        }
 
         if ($result === null) {
             return ProcessStatus::Failed;

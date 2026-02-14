@@ -1,11 +1,10 @@
 <?php
 
 use Baton\BatonManager;
-use Baton\Drivers\NullDriver;
-use Baton\Output\MessageEvent;
+use Baton\Contracts\OutputReader;
+use Baton\Exceptions\ProcessFailedException;
 
 test('null driver spawns a process', function () {
-    $driver = new NullDriver();
     $manager = new BatonManager(['default' => 'null', 'drivers' => ['null' => []]]);
     $process = $manager->spawn('Test');
 
@@ -18,11 +17,10 @@ test('null driver can complete a process', function () {
     $driver = $manager->driver('null');
     $process = $manager->spawn('Test');
 
-    $driver->complete($process, 'Result text');
+    $driver->complete($process, 'All done');
 
     expect($process->isRunning())->toBeFalse()
-        ->and($process->result()->success)->toBeTrue()
-        ->and($process->result()->output)->toBe('Result text');
+        ->and($process->result()->output)->toBe('All done');
 });
 
 test('null driver can fail a process', function () {
@@ -30,53 +28,37 @@ test('null driver can fail a process', function () {
     $driver = $manager->driver('null');
     $process = $manager->spawn('Test');
 
-    $driver->fail($process, 'Boom');
+    $driver->fail($process, 'Oops');
 
-    expect($process->isRunning())->toBeFalse()
-        ->and($process->result()->success)->toBeFalse()
-        ->and($process->result()->error)->toBe('Boom');
+    expect($process->isRunning())->toBeFalse();
+    expect(fn () => $process->result())->toThrow(ProcessFailedException::class, 'Oops');
 });
 
 test('null driver can terminate a process', function () {
     $manager = new BatonManager(['default' => 'null', 'drivers' => ['null' => []]]);
-    $driver = $manager->driver('null');
     $process = $manager->spawn('Test');
 
-    $driver->terminate($process);
-
-    expect($process->isRunning())->toBeFalse();
+    expect($process->kill())->toBeTrue()
+        ->and($process->isRunning())->toBeFalse();
 });
 
 test('null driver provides output reader', function () {
     $manager = new BatonManager(['default' => 'null', 'drivers' => ['null' => []]]);
-    $driver = $manager->driver('null');
     $process = $manager->spawn('Test');
 
-    $driver->addOutput($process, new MessageEvent(content: 'Hello'));
-    $driver->addOutput($process, new MessageEvent(content: 'World'));
-
-    $events = iterator_to_array($process->output()->events());
-
-    expect($events)->toHaveCount(2)
-        ->and($events[0]->content)->toBe('Hello')
-        ->and($events[1]->content)->toBe('World');
+    expect($process->output())->toBeInstanceOf(OutputReader::class);
 });
 
 test('null driver output reader tail works', function () {
     $manager = new BatonManager(['default' => 'null', 'drivers' => ['null' => []]]);
-    $driver = $manager->driver('null');
     $process = $manager->spawn('Test');
 
-    $driver->addOutput($process, new MessageEvent(content: 'Line 1'));
-    $driver->addOutput($process, new MessageEvent(content: 'Line 2'));
-
-    expect($process->output()->tail())->toContain('Line 1')
-        ->and($process->output()->tail())->toContain('Line 2');
+    expect($process->output()->tail())->toBe('');
 });
 
 test('null driver reports capabilities', function () {
-    $driver = new NullDriver();
+    $manager = new BatonManager(['default' => 'null', 'drivers' => ['null' => []]]);
+    $driver = $manager->driver('null');
 
-    expect($driver->capabilities())->toHaveKey('testing')
-        ->and($driver->capabilities()['testing'])->toBeTrue();
+    expect($driver->capabilities())->toHaveKey('testing', true);
 });

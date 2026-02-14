@@ -7,6 +7,7 @@ namespace Baton\Drivers;
 use Baton\Contracts\Driver;
 use Baton\Contracts\OutputReader;
 use Baton\Exceptions\ProcessCrashedException;
+use Baton\Exceptions\ProcessFailedException;
 use Baton\Output\ResultEvent;
 use Baton\Parsers\ClaudeStreamParser;
 use Baton\PendingProcess;
@@ -140,23 +141,25 @@ class ClaudeCodeDriver implements Driver
                 cost: $data['total_cost_usd'] ?? null,
             );
 
-            // Collect text output from all message events
-            $textOutput = $this->collectTextOutput($lines);
+            if ($isError) {
+                throw new ProcessFailedException(
+                    processId: $process->id,
+                    error: $data['error'] ?? $subtype,
+                    usage: $usage,
+                );
+            }
 
             return new Result(
-                success: ! $isError,
-                output: $textOutput,
+                output: $this->collectTextOutput($lines),
                 structured: $data['structured_output'] ?? null,
                 usage: $usage,
                 durationMs: isset($data['duration_ms']) ? (int) $data['duration_ms'] : null,
-                error: $isError ? ($data['error'] ?? $subtype) : null,
             );
         }
 
-        // No result event in output — check exit file for crash detection.
-        // A non-zero exit without a result event means the process crashed
-        // before it could report anything. This is distinct from a normal
-        // agent failure (where the agent writes an error result event).
+        // No result event — check exit file for crash detection.
+        // Non-zero exit without a result event means the process crashed
+        // before reporting anything.
         $exitCode = $this->readExitCode($process);
 
         if ($exitCode !== null && $exitCode !== 0) {

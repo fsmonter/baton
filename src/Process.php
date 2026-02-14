@@ -6,7 +6,7 @@ namespace Baton;
 
 use Baton\Contracts\Driver;
 use Baton\Contracts\OutputReader;
-use Baton\Exceptions\ProcessCrashedException;
+use Baton\Exceptions\BatonException;
 use Carbon\Carbon;
 
 class Process
@@ -25,6 +25,15 @@ class Process
         return $this->driverInstance->isRunning($this);
     }
 
+    /**
+     * @throws \Baton\Exceptions\ProcessFailedException
+     * @throws \Baton\Exceptions\ProcessCrashedException
+     */
+    public function result(): ?Result
+    {
+        return $this->driverInstance->getResult($this);
+    }
+
     public function status(): ProcessStatus
     {
         if ($this->isRunning()) {
@@ -33,25 +42,16 @@ class Process
 
         try {
             $result = $this->result();
-        } catch (ProcessCrashedException) {
+        } catch (BatonException) {
             return ProcessStatus::Failed;
         }
 
-        if ($result === null) {
-            return ProcessStatus::Failed;
-        }
-
-        return $result->success ? ProcessStatus::Completed : ProcessStatus::Failed;
+        return $result !== null ? ProcessStatus::Completed : ProcessStatus::Failed;
     }
 
     public function output(): OutputReader
     {
         return $this->driverInstance->readOutput($this);
-    }
-
-    public function result(): ?Result
-    {
-        return $this->driverInstance->getResult($this);
     }
 
     public function kill(): bool

@@ -1,7 +1,6 @@
 <?php
 
 use Baton\BatonManager;
-use Baton\Contracts\ProcessStore;
 use Baton\Events\ProcessCompleted;
 use Baton\Events\ProcessFailed;
 use Baton\ProcessMonitor;
@@ -87,7 +86,6 @@ test('check fires ProcessCompleted event', function () {
     $driver = $this->manager->driver('null');
     $driver->complete($process, 'Done');
 
-    // Reset fired events to only track monitor events
     $firedEvents = [];
 
     $monitor = new ProcessMonitor($this->manager, $this->store, $events);
@@ -95,10 +93,11 @@ test('check fires ProcessCompleted event', function () {
 
     expect($firedEvents)->toHaveCount(1)
         ->and($firedEvents[0])->toBeInstanceOf(ProcessCompleted::class)
-        ->and($firedEvents[0]->process->id)->toBe($process->id);
+        ->and($firedEvents[0]->process->id)->toBe($process->id)
+        ->and($firedEvents[0]->result->output)->toBe('Done');
 });
 
-test('check fires ProcessFailed event', function () {
+test('check fires ProcessFailed event on agent failure', function () {
     $firedEvents = [];
     $events = Mockery::mock(Dispatcher::class);
     $events->shouldReceive('dispatch')->andReturnUsing(function ($event) use (&$firedEvents) {

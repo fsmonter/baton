@@ -1,8 +1,7 @@
 <?php
 
 use Baton\BatonManager;
-use Baton\Drivers\NullDriver;
-use Baton\Process;
+use Baton\Exceptions\ProcessFailedException;
 use Baton\ProcessStatus;
 
 test('process delegates isRunning to driver', function () {
@@ -61,9 +60,18 @@ test('process result returns result after completion', function () {
 
     $driver->complete($process, 'All done');
 
-    expect($process->result()->success)->toBeTrue()
-        ->and($process->result()->output)->toBe('All done');
+    expect($process->result()->output)->toBe('All done');
 });
+
+test('process result throws on failure', function () {
+    $manager = new BatonManager(['default' => 'null', 'drivers' => ['null' => []]]);
+    $driver = $manager->driver('null');
+    $process = $manager->spawn('Test');
+
+    $driver->fail($process, 'Something broke');
+
+    $process->result();
+})->throws(ProcessFailedException::class, 'Something broke');
 
 test('process has uuid id', function () {
     $manager = new BatonManager(['default' => 'null', 'drivers' => ['null' => []]]);

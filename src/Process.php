@@ -53,4 +53,33 @@ class Process
     {
         return $this->driverInstance->terminate($this);
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'driver' => $this->driver,
+            'handle' => $this->handle,
+            'work_dir' => $this->workDir,
+            'started_at' => $this->startedAt->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data, Driver $driverInstance): static
+    {
+        return new static(
+            id: $data['id'],
+            driver: $data['driver'],
+            handle: $data['handle'],
+            workDir: $data['work_dir'],
+            startedAt: Carbon::parse($data['started_at']),
+            driverInstance: $driverInstance,
+        );
+    }
 }

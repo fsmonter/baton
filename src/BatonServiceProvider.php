@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Baton;
 
+use Baton\Contracts\ProcessStore;
+use Baton\Store\FilesystemStore;
 use Illuminate\Support\ServiceProvider;
 
 class BatonServiceProvider extends ServiceProvider
@@ -12,8 +14,28 @@ class BatonServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/baton.php', 'baton');
 
+        $this->app->singleton(ProcessStore::class, function ($app) {
+            $config = $app['config']['baton.store'] ?? [];
+            $driver = $config['driver'] ?? 'filesystem';
+
+            return match ($driver) {
+                'filesystem' => new FilesystemStore(
+                    $config['path'] ?? storage_path('baton/processes'),
+                ),
+                default => new FilesystemStore(storage_path('baton/processes')),
+            };
+        });
+
         $this->app->singleton(BatonManager::class, function ($app) {
-            return new BatonManager($app['config']['baton'] ?? []);
+            $manager = new BatonManager($app['config']['baton'] ?? []);
+
+            $manager->setStore($app->make(ProcessStore::class));
+
+            if ($app->bound('events')) {
+                $manager->setEventDispatcher($app['events']);
+            }
+
+            return $manager;
         });
     }
 

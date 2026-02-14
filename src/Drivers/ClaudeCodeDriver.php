@@ -32,12 +32,14 @@ class ClaudeCodeDriver implements Driver
         $id = Str::uuid()->toString();
         $workDir = $pending->getDirectory() ?? $this->config['work_dir'] ?? getcwd();
         $outputPath = $this->getOutputPath($id);
+        $stateDir = $this->getStateDir();
 
         File::ensureDirectoryExists(dirname($outputPath));
+        File::ensureDirectoryExists($stateDir);
 
         $promptPath = $this->writePromptFile($id, $pending->getPrompt() ?? '');
         $schemaPath = $pending->getSchema() ? $this->writeSchemaFile($id, $pending->getSchema()) : null;
-        $wrapperScript = $this->createWrapperScript($id, $pending, $workDir, $promptPath, $outputPath, $schemaPath);
+        $wrapperScript = $this->createWrapperScript($id, $pending, $workDir, $promptPath, $outputPath, $schemaPath, $stateDir);
 
         $pid = $this->executeInBackground($wrapperScript);
 
@@ -50,6 +52,7 @@ class ClaudeCodeDriver implements Driver
                 'prompt_path' => $promptPath,
                 'schema_path' => $schemaPath,
                 'wrapper_script' => $wrapperScript,
+                'state_dir' => $stateDir,
             ],
             workDir: $workDir,
             startedAt: Carbon::now(),
@@ -61,6 +64,12 @@ class ClaudeCodeDriver implements Driver
 
     public function isRunning(Process $process): bool
     {
+        // Check exit file first — definitive "not running" signal
+        if ($this->hasExitFile($process)) {
+            return false;
+        }
+
+        // Fall back to PID check
         $pid = $process->handle['pid'] ?? null;
 
         if (! $pid) {
@@ -78,7 +87,15 @@ class ClaudeCodeDriver implements Driver
             return false;
         }
 
-        return posix_kill($pid, SIGTERM);
+        // Kill the process group (negative PID) to clean up all children
+        $killed = @posix_kill(-$pid, SIGTERM);
+
+        if (! $killed) {
+            // Fall back to killing just the process
+            $killed = posix_kill($pid, SIGTERM);
+        }
+
+        return $killed;
     }
 
     public function readOutput(Process $process): OutputReader
@@ -135,6 +152,16 @@ class ClaudeCodeDriver implements Driver
             );
         }
 
+        // No result event in output — check exit file for crash detection
+        $exitCode = $this->readExitCode($process);
+
+        if ($exitCode !== null && $exitCode !== 0) {
+            return new Result(
+                success: false,
+                error: "Process exited with code {$exitCode}",
+            );
+        }
+
         return null;
     }
 
@@ -148,6 +175,35 @@ class ClaudeCodeDriver implements Driver
             'max_turns' => true,
         ];
     }
+
+    // --- State file helpers ---
+
+    protected function hasExitFile(Process $process): bool
+    {
+        return file_exists($this->exitFilePath($process));
+    }
+
+    protected function readExitCode(Process $process): ?int
+    {
+        $path = $this->exitFilePath($process);
+
+        if (! file_exists($path)) {
+            return null;
+        }
+
+        $contents = trim(file_get_contents($path));
+
+        return is_numeric($contents) ? (int) $contents : null;
+    }
+
+    protected function exitFilePath(Process $process): string
+    {
+        $stateDir = $process->handle['state_dir'] ?? $this->getStateDir();
+
+        return $stateDir.'/'.$process->id.'.exit';
+    }
+
+    // --- Output helpers ---
 
     protected function collectTextOutput(array $lines): ?string
     {
@@ -173,6 +229,8 @@ class ClaudeCodeDriver implements Driver
 
         return $texts ? implode("\n", $texts) : null;
     }
+
+    // --- File & script creation ---
 
     protected function writePromptFile(string $id, string $prompt): string
     {
@@ -203,6 +261,7 @@ class ClaudeCodeDriver implements Driver
         string $promptPath,
         string $outputPath,
         ?string $schemaPath,
+        string $stateDir,
     ): string {
         $scriptDir = $this->config['script_dir'] ?? storage_path('baton/scripts');
         File::ensureDirectoryExists($scriptDir);
@@ -211,10 +270,33 @@ class ClaudeCodeDriver implements Driver
         $binary = $this->config['binary'] ?? 'claude';
         $command = $this->buildCommandString($pending, $schemaPath);
 
+        $escapedStateDir = escapeshellarg($stateDir);
+        $escapedId = escapeshellarg($id);
+
         $script = <<<BASH
 #!/bin/bash
+set -e
+
+STATE_DIR={$escapedStateDir}
+BATON_ID={$escapedId}
+
+# Write PID file
+echo \$\$ > "\${STATE_DIR}/\${BATON_ID}.pid"
+
+# Cleanup: kill children and write exit code
+cleanup() {
+    local exit_code=\${1:-\$?}
+    # Kill child processes in our process group
+    kill -- -\$\$ 2>/dev/null || true
+    echo "\$exit_code" > "\${STATE_DIR}/\${BATON_ID}.exit"
+}
+
+trap 'cleanup 130' INT
+trap 'cleanup 143' TERM
+trap 'cleanup' EXIT
+
 cd {$workDir}
-exec {$binary} {$command} < {$promptPath} > {$outputPath} 2>&1
+{$binary} {$command} < {$promptPath} > {$outputPath} 2>&1
 BASH;
 
         file_put_contents($scriptPath, $script);
@@ -270,7 +352,10 @@ BASH;
 
     protected function executeInBackground(string $scriptPath): string
     {
-        $command = sprintf('nohup %s & echo $!', escapeshellarg($scriptPath));
+        // setsid creates a new session + process group for clean lifecycle management.
+        // The script PID becomes the process group leader — we can kill the entire
+        // group with kill(-$pid) and avoid orphaned child processes.
+        $command = sprintf('setsid %s > /dev/null 2>&1 & echo $!', escapeshellarg($scriptPath));
         $result = LaravelProcess::run($command);
         $pid = trim($result->output());
 
@@ -286,5 +371,10 @@ BASH;
         $basePath = $this->config['output_dir'] ?? storage_path('baton/output');
 
         return "{$basePath}/{$id}.jsonl";
+    }
+
+    protected function getStateDir(): string
+    {
+        return $this->config['state_dir'] ?? storage_path('baton/state');
     }
 }

@@ -15,11 +15,11 @@ test('process spawned event holds process', function () {
 
 test('process completed event holds process and result', function () {
     $process = Mockery::mock(Process::class);
-    $result = new Result(success: true, output: 'Done');
+    $result = new Result(output: 'Done');
     $event = new ProcessCompleted($process, $result);
 
     expect($event->process)->toBe($process)
-        ->and($event->result->success)->toBeTrue();
+        ->and($event->result->output)->toBe('Done');
 });
 
 test('process failed event holds process and error', function () {
@@ -28,4 +28,13 @@ test('process failed event holds process and error', function () {
 
     expect($event->process)->toBe($process)
         ->and($event->error)->toBe('Something broke');
+});
+
+test('process failed event holds usage from failed run', function () {
+    $process = Mockery::mock(Process::class);
+    $usage = new \Baton\Usage(inputTokens: 500, outputTokens: 100);
+    $event = new ProcessFailed($process, error: 'Token limit', usage: $usage);
+
+    expect($event->usage)->toBe($usage)
+        ->and($event->usage->inputTokens)->toBe(500);
 });

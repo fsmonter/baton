@@ -79,9 +79,7 @@ class PendingProcess
 
     public function spawn(): Process
     {
-        $driver = $this->manager->driver($this->driverName);
-
-        return $driver->spawn($this);
+        return $this->manager->spawnProcess($this);
     }
 
     // Accessors for drivers to read config

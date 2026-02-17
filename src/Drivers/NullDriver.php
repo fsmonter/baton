@@ -6,6 +6,7 @@ namespace Baton\Drivers;
 
 use Baton\Contracts\Driver;
 use Baton\Contracts\OutputReader;
+use Baton\Exceptions\ProcessFailedException;
 use Baton\Output\MessageEvent;
 use Baton\PendingProcess;
 use Baton\Process;
@@ -18,6 +19,7 @@ class NullDriver implements Driver
 {
     protected array $running = [];
     protected array $results = [];
+    protected array $errors = [];
     protected array $outputs = [];
 
     public function __construct(
@@ -61,6 +63,13 @@ class NullDriver implements Driver
 
     public function getResult(Process $process): ?Result
     {
+        if (isset($this->errors[$process->id])) {
+            throw new ProcessFailedException(
+                processId: $process->id,
+                error: $this->errors[$process->id],
+            );
+        }
+
         return $this->results[$process->id] ?? null;
     }
 
@@ -75,15 +84,11 @@ class NullDriver implements Driver
 
     // Test helpers
 
-    public function complete(Process $process, string $output = 'Done', bool $success = true): void
+    public function complete(Process $process, string $output = 'Done'): void
     {
         unset($this->running[$process->id]);
 
-        $this->results[$process->id] = new Result(
-            success: $success,
-            output: $output,
-        );
-
+        $this->results[$process->id] = new Result(output: $output);
         $this->outputs[$process->id][] = new MessageEvent(content: $output);
     }
 
@@ -91,10 +96,7 @@ class NullDriver implements Driver
     {
         unset($this->running[$process->id]);
 
-        $this->results[$process->id] = new Result(
-            success: false,
-            error: $error,
-        );
+        $this->errors[$process->id] = $error;
     }
 
     public function addOutput(Process $process, MessageEvent $event): void

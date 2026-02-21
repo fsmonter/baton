@@ -2,13 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Baton\Drivers;
+namespace Baton\Adapters;
 
 use Baton\Contracts\OutputReader;
 use Baton\Output\OutputEvent;
 use Baton\Parsers\ClaudeStreamParser;
 use Generator;
-use SplFileObject;
 
 class ClaudeCodeOutputReader implements OutputReader
 {
@@ -64,7 +63,7 @@ class ClaudeCodeOutputReader implements OutputReader
             return '';
         }
 
-        $file = new SplFileObject($this->outputPath, 'r');
+        $file = new \SplFileObject($this->outputPath, 'r');
         $file->seek(PHP_INT_MAX);
         $totalLines = $file->key();
 

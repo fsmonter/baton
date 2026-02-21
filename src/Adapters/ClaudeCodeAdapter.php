@@ -2,13 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Baton\Drivers;
+namespace Baton\Adapters;
 
-use Baton\Contracts\Driver;
+use Baton\Contracts\AgentAdapter;
 use Baton\Contracts\OutputReader;
 use Baton\Exceptions\ProcessCrashedException;
 use Baton\Exceptions\ProcessFailedException;
-use Baton\Output\ResultEvent;
 use Baton\Parsers\ClaudeStreamParser;
 use Baton\PendingProcess;
 use Baton\Process;
@@ -19,7 +18,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process as LaravelProcess;
 use Illuminate\Support\Str;
 
-class ClaudeCodeDriver implements Driver
+class ClaudeCodeAdapter implements AgentAdapter
 {
     protected ClaudeStreamParser $parser;
 
@@ -47,7 +46,7 @@ class ClaudeCodeDriver implements Driver
 
         $process = new Process(
             id: $id,
-            driver: 'claude-code',
+            adapter: 'claude-code',
             handle: [
                 'pid' => (int) $pid,
                 'output_path' => $outputPath,
@@ -58,7 +57,7 @@ class ClaudeCodeDriver implements Driver
             ],
             workDir: $workDir,
             startedAt: Carbon::now(),
-            driverInstance: $this,
+            adapterInstance: $this,
         );
 
         return $process;
@@ -89,11 +88,14 @@ class ClaudeCodeDriver implements Driver
             return false;
         }
 
-        // Kill the process group (negative PID) to clean up all children
+        // Try process group kill first (works when setsid created a new group)
         $killed = @posix_kill(-$pid, SIGTERM);
 
         if (! $killed) {
-            // Fall back to killing just the process
+            // Kill children first, then the wrapper itself.
+            // On macOS without setsid the wrapper isn't a group leader,
+            // so we find and signal child processes directly.
+            LaravelProcess::run("pkill -TERM -P {$pid}");
             $killed = posix_kill($pid, SIGTERM);
         }
 
@@ -299,6 +301,9 @@ trap 'cleanup 130' INT
 trap 'cleanup 143' TERM
 trap 'cleanup' EXIT
 
+# Allow spawning from within other Claude sessions
+unset CLAUDECODE
+
 cd {$workDir}
 {$binary} {$command} < {$promptPath} > {$outputPath} 2>&1
 BASH;
@@ -356,10 +361,14 @@ BASH;
 
     protected function executeInBackground(string $scriptPath): string
     {
+        $escaped = escapeshellarg($scriptPath);
+
         // setsid creates a new session + process group for clean lifecycle management.
-        // The script PID becomes the process group leader — we can kill the entire
-        // group with kill(-$pid) and avoid orphaned child processes.
-        $command = sprintf('setsid %s > /dev/null 2>&1 & echo $!', escapeshellarg($scriptPath));
+        // On macOS setsid isn't available, so we fall back to a plain background exec.
+        // The wrapper script already handles cleanup via trap + kill -- -$$.
+        $setsid = $this->hasSetsid() ? "setsid {$escaped}" : $escaped;
+
+        $command = sprintf('%s > /dev/null 2>&1 & echo $!', $setsid);
         $result = LaravelProcess::run($command);
         $pid = trim($result->output());
 
@@ -368,6 +377,12 @@ BASH;
         }
 
         return $pid;
+    }
+
+    protected function hasSetsid(): bool
+    {
+        return str_contains(PHP_OS_FAMILY, 'Linux')
+            || ! empty(trim(shell_exec('which setsid 2>/dev/null') ?? ''));
     }
 
     protected function getOutputPath(string $id): string

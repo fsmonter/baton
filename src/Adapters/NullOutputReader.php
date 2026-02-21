@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Baton\Drivers;
+namespace Baton\Adapters;
 
 use Baton\Contracts\OutputReader;
 use Baton\Output\MessageEvent;

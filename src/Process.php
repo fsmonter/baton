@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Baton;
 
-use Baton\Contracts\Driver;
+use Baton\Contracts\AgentAdapter;
 use Baton\Contracts\OutputReader;
 use Baton\Exceptions\BatonException;
 use Carbon\Carbon;
@@ -13,16 +13,16 @@ class Process
 {
     public function __construct(
         public readonly string $id,
-        public readonly string $driver,
+        public readonly string $adapter,
         public readonly array $handle,
         public readonly string $workDir,
         public readonly Carbon $startedAt,
-        protected Driver $driverInstance,
+        protected AgentAdapter $adapterInstance,
     ) {}
 
     public function isRunning(): bool
     {
-        return $this->driverInstance->isRunning($this);
+        return $this->adapterInstance->isRunning($this);
     }
 
     /**
@@ -31,7 +31,7 @@ class Process
      */
     public function result(): ?Result
     {
-        return $this->driverInstance->getResult($this);
+        return $this->adapterInstance->getResult($this);
     }
 
     public function status(): ProcessStatus
@@ -51,12 +51,12 @@ class Process
 
     public function output(): OutputReader
     {
-        return $this->driverInstance->readOutput($this);
+        return $this->adapterInstance->readOutput($this);
     }
 
     public function kill(): bool
     {
-        return $this->driverInstance->terminate($this);
+        return $this->adapterInstance->terminate($this);
     }
 
     /**
@@ -66,7 +66,7 @@ class Process
     {
         return [
             'id' => $this->id,
-            'driver' => $this->driver,
+            'adapter' => $this->adapter,
             'handle' => $this->handle,
             'work_dir' => $this->workDir,
             'started_at' => $this->startedAt->toIso8601String(),
@@ -76,15 +76,15 @@ class Process
     /**
      * @param array<string, mixed> $data
      */
-    public static function fromArray(array $data, Driver $driverInstance): static
+    public static function fromArray(array $data, AgentAdapter $adapterInstance): static
     {
         return new static(
             id: $data['id'],
-            driver: $data['driver'],
+            adapter: $data['adapter'],
             handle: $data['handle'],
             workDir: $data['work_dir'],
             startedAt: Carbon::parse($data['started_at']),
-            driverInstance: $driverInstance,
+            adapterInstance: $adapterInstance,
         );
     }
 }

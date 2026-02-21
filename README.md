@@ -90,22 +90,22 @@ use Baton\Events\ProcessFailed;
 Event::listen(ProcessSpawned::class, fn ($e) => /* ... */);
 ```
 
-## Drivers
+## Adapters
 
-| Driver | Runtime | Status |
-|--------|---------|--------|
+| Adapter | Runtime | Status |
+|---------|---------|--------|
 | `claude-code` | Claude Code CLI | ✅ |
 | `null` | Testing | ✅ |
 | `docker` | Any agent in Docker | 🔜 |
 | `e2b` | E2B cloud sandbox | 🔜 |
 
-### Custom Drivers
+### Custom Adapters
 
 ```php
 use Baton\Baton;
 
-Baton::extend('my-driver', function (array $config) {
-    return new MyCustomDriver($config);
+Baton::extend('my-adapter', function (array $config) {
+    return new MyCustomAdapter($config);
 });
 ```
 
@@ -114,9 +114,9 @@ Baton::extend('my-driver', function (array $config) {
 ```php
 // config/baton.php
 return [
-    'default' => env('BATON_DRIVER', 'claude-code'),
+    'default' => env('BATON_ADAPTER', 'claude-code'),
 
-    'drivers' => [
+    'adapters' => [
         'claude-code' => [
             'binary' => env('BATON_CLAUDE_BINARY', 'claude'),
             'model' => env('BATON_CLAUDE_MODEL', 'sonnet'),
@@ -130,20 +130,20 @@ return [
 
 ## Testing
 
-Use the `null` driver in tests:
+Use the `null` adapter in tests:
 
 ```php
 use Baton\Baton;
-use Baton\Drivers\NullDriver;
+use Baton\Adapters\NullAdapter;
 
 // Set null as default in your test
 config(['baton.default' => 'null']);
 
 $process = Baton::spawn('Test prompt');
-$driver = Baton::driver('null');
+$adapter = Baton::adapter('null');
 
 // Simulate completion
-$driver->complete($process, 'Task done!');
+$adapter->complete($process, 'Task done!');
 
 expect($process->result()->success)->toBeTrue();
 expect($process->result()->output)->toBe('Task done!');

@@ -2,20 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Baton\Drivers;
+namespace Baton\Adapters;
 
-use Baton\Contracts\Driver;
+use Baton\Contracts\AgentAdapter;
 use Baton\Contracts\OutputReader;
 use Baton\Exceptions\ProcessFailedException;
 use Baton\Output\MessageEvent;
 use Baton\PendingProcess;
 use Baton\Process;
 use Baton\Result;
-use Baton\Usage;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 
-class NullDriver implements Driver
+class NullAdapter implements AgentAdapter
 {
     protected array $running = [];
     protected array $results = [];
@@ -32,11 +31,11 @@ class NullDriver implements Driver
 
         $process = new Process(
             id: $id,
-            driver: 'null',
+            adapter: 'null',
             handle: ['simulated' => true],
             workDir: $pending->getDirectory() ?? getcwd(),
             startedAt: Carbon::now(),
-            driverInstance: $this,
+            adapterInstance: $this,
         );
 
         $this->running[$id] = true;

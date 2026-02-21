@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Baton;
 
-use Baton\Contracts\Driver;
+use Baton\Adapters\ClaudeCodeAdapter;
+use Baton\Adapters\NullAdapter;
+use Baton\Contracts\AgentAdapter;
 use Baton\Contracts\ProcessStore;
-use Baton\Drivers\ClaudeCodeDriver;
-use Baton\Drivers\NullDriver;
 use Baton\Events\ProcessSpawned;
 use Closure;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -15,8 +15,8 @@ use InvalidArgumentException;
 
 class BatonManager
 {
-    /** @var array<string, Driver> */
-    protected array $drivers = [];
+    /** @var array<string, AgentAdapter> */
+    protected array $adapters = [];
 
     /** @var array<string, Closure> */
     protected array $customCreators = [];
@@ -51,8 +51,8 @@ class BatonManager
      */
     public function spawnProcess(PendingProcess $pending): Process
     {
-        $driver = $this->driver($pending->getDriverName());
-        $process = $driver->spawn($pending);
+        $adapter = $this->adapter($pending->getAdapterName());
+        $process = $adapter->spawn($pending);
 
         $this->store?->save($process->id, $process->toArray());
         $this->fire(new ProcessSpawned($process));
@@ -118,13 +118,13 @@ class BatonManager
         return new ProcessMonitor($this, $this->store, $this->events);
     }
 
-    // --- Driver management ---
+    // --- Adapter management ---
 
-    public function driver(?string $name = null): Driver
+    public function adapter(?string $name = null): AgentAdapter
     {
-        $name ??= $this->getDefaultDriver();
+        $name ??= $this->getDefaultAdapter();
 
-        return $this->drivers[$name] ??= $this->resolve($name);
+        return $this->adapters[$name] ??= $this->resolve($name);
     }
 
     public function extend(string $name, Closure $callback): static
@@ -134,7 +134,7 @@ class BatonManager
         return $this;
     }
 
-    public function getDefaultDriver(): string
+    public function getDefaultAdapter(): string
     {
         return $this->config['default'] ?? 'claude-code';
     }
@@ -162,39 +162,39 @@ class BatonManager
 
     // --- Internal ---
 
-    protected function resolve(string $name): Driver
+    protected function resolve(string $name): AgentAdapter
     {
         if (isset($this->customCreators[$name])) {
-            return ($this->customCreators[$name])($this->getDriverConfig($name));
+            return ($this->customCreators[$name])($this->getAdapterConfig($name));
         }
 
         return match ($name) {
-            'claude-code' => new ClaudeCodeDriver($this->getDriverConfig($name)),
-            'null' => new NullDriver($this->getDriverConfig($name)),
-            default => throw new InvalidArgumentException("Driver [{$name}] is not supported."),
+            'claude-code' => new ClaudeCodeAdapter($this->getAdapterConfig($name)),
+            'null' => new NullAdapter($this->getAdapterConfig($name)),
+            default => throw new InvalidArgumentException("Adapter [{$name}] is not supported."),
         };
     }
 
-    protected function getDriverConfig(string $name): array
+    protected function getAdapterConfig(string $name): array
     {
-        return $this->config['drivers'][$name] ?? [];
+        return $this->config['adapters'][$name] ?? [];
     }
 
     protected function hydrate(array $data): ?Process
     {
-        $driverName = $data['driver'] ?? null;
+        $adapterName = $data['adapter'] ?? null;
 
-        if (! $driverName) {
+        if (! $adapterName) {
             return null;
         }
 
         try {
-            $driver = $this->driver($driverName);
+            $adapter = $this->adapter($adapterName);
         } catch (InvalidArgumentException) {
             return null;
         }
 
-        return Process::fromArray($data, $driver);
+        return Process::fromArray($data, $adapter);
     }
 
     protected function fire(object $event): void

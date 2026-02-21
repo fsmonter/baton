@@ -7,9 +7,8 @@ namespace Baton\Contracts;
 use Baton\PendingProcess;
 use Baton\Process;
 use Baton\Result;
-use Generator;
 
-interface Driver
+interface AgentAdapter
 {
     public function spawn(PendingProcess $pending): Process;
 

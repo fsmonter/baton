@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static Process|null find(string $id)
  * @method static Process[] active()
  * @method static ProcessMonitor monitor()
- * @method static Contracts\AgentAdapter adapter(?string $name = null)
+ * @method static Contracts\AgentAdapter agent(?string $name = null)
  * @method static BatonManager extend(string $name, \Closure $callback)
  * @method static BatonManager setStore(Contracts\ProcessStore $store)
  *

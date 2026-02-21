@@ -10,7 +10,7 @@ class PendingProcess
     protected ?string $modelName = null;
     protected ?array $toolsList = null;
     protected ?string $directory = null;
-    protected ?string $adapterName = null;
+    protected ?string $agentName = null;
     protected ?int $maxTurnsCount = null;
     protected ?int $timeoutSeconds = null;
     protected ?array $jsonSchema = null;
@@ -47,9 +47,9 @@ class PendingProcess
         return $this;
     }
 
-    public function via(string $adapter): static
+    public function via(string $agent): static
     {
-        $this->adapterName = $adapter;
+        $this->agentName = $agent;
 
         return $this;
     }
@@ -85,7 +85,7 @@ class PendingProcess
     public function getModel(): ?string { return $this->modelName; }
     public function getTools(): ?array { return $this->toolsList; }
     public function getDirectory(): ?string { return $this->directory; }
-    public function getAdapterName(): ?string { return $this->adapterName; }
+    public function getAgentName(): ?string { return $this->agentName; }
     public function getMaxTurns(): ?int { return $this->maxTurnsCount; }
     public function getTimeout(): ?int { return $this->timeoutSeconds; }
     public function getSchema(): ?array { return $this->jsonSchema; }

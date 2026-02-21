@@ -16,7 +16,7 @@ use InvalidArgumentException;
 class BatonManager
 {
     /** @var array<string, AgentAdapter> */
-    protected array $adapters = [];
+    protected array $agents = [];
 
     /** @var array<string, Closure> */
     protected array $customCreators = [];
@@ -51,8 +51,8 @@ class BatonManager
      */
     public function spawnProcess(PendingProcess $pending): Process
     {
-        $adapter = $this->adapter($pending->getAdapterName());
-        $process = $adapter->spawn($pending);
+        $agent = $this->agent($pending->getAgentName());
+        $process = $agent->spawn($pending);
 
         $this->store?->save($process->id, $process->toArray());
         $this->fire(new ProcessSpawned($process));
@@ -118,13 +118,13 @@ class BatonManager
         return new ProcessMonitor($this, $this->store, $this->events);
     }
 
-    // --- Adapter management ---
+    // --- Agent management ---
 
-    public function adapter(?string $name = null): AgentAdapter
+    public function agent(?string $name = null): AgentAdapter
     {
-        $name ??= $this->getDefaultAdapter();
+        $name ??= $this->getDefaultAgent();
 
-        return $this->adapters[$name] ??= $this->resolve($name);
+        return $this->agents[$name] ??= $this->resolve($name);
     }
 
     public function extend(string $name, Closure $callback): static
@@ -134,7 +134,7 @@ class BatonManager
         return $this;
     }
 
-    public function getDefaultAdapter(): string
+    public function getDefaultAgent(): string
     {
         return $this->config['default'] ?? 'claude-code';
     }
@@ -165,36 +165,36 @@ class BatonManager
     protected function resolve(string $name): AgentAdapter
     {
         if (isset($this->customCreators[$name])) {
-            return ($this->customCreators[$name])($this->getAdapterConfig($name));
+            return ($this->customCreators[$name])($this->getAgentConfig($name));
         }
 
         return match ($name) {
-            'claude-code' => new ClaudeCodeAdapter($this->getAdapterConfig($name)),
-            'null' => new NullAdapter($this->getAdapterConfig($name)),
-            default => throw new InvalidArgumentException("Adapter [{$name}] is not supported."),
+            'claude-code' => new ClaudeCodeAdapter($this->getAgentConfig($name)),
+            'null' => new NullAdapter($this->getAgentConfig($name)),
+            default => throw new InvalidArgumentException("Agent [{$name}] is not supported."),
         };
     }
 
-    protected function getAdapterConfig(string $name): array
+    protected function getAgentConfig(string $name): array
     {
-        return $this->config['adapters'][$name] ?? [];
+        return $this->config['agents'][$name] ?? [];
     }
 
     protected function hydrate(array $data): ?Process
     {
-        $adapterName = $data['adapter'] ?? null;
+        $agentName = $data['agent'] ?? null;
 
-        if (! $adapterName) {
+        if (! $agentName) {
             return null;
         }
 
         try {
-            $adapter = $this->adapter($adapterName);
+            $agent = $this->agent($agentName);
         } catch (InvalidArgumentException) {
             return null;
         }
 
-        return Process::fromArray($data, $adapter);
+        return Process::fromArray($data, $agent);
     }
 
     protected function fire(object $event): void

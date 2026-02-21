@@ -16,7 +16,7 @@ afterEach(function () {
 });
 
 test('save and get process data', function () {
-    $data = ['id' => 'test-1', 'adapter' => 'null', 'handle' => ['pid' => 123]];
+    $data = ['id' => 'test-1', 'agent' => 'null', 'handle' => ['pid' => 123]];
 
     $this->store->save('test-1', $data);
 
@@ -38,8 +38,8 @@ test('exists returns false for missing data', function () {
 });
 
 test('all returns all saved entries', function () {
-    $this->store->save('a', ['id' => 'a', 'adapter' => 'null']);
-    $this->store->save('b', ['id' => 'b', 'adapter' => 'null']);
+    $this->store->save('a', ['id' => 'a', 'agent' => 'null']);
+    $this->store->save('b', ['id' => 'b', 'agent' => 'null']);
 
     $all = $this->store->all();
 

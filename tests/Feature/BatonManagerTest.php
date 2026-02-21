@@ -6,57 +6,57 @@ use Baton\Adapters\NullAdapter;
 use Baton\PendingProcess;
 use Baton\Process;
 
-test('manager resolves default adapter', function () {
-    $manager = new BatonManager(['default' => 'null', 'adapters' => ['null' => []]]);
+test('manager resolves default agent', function () {
+    $manager = new BatonManager(['default' => 'null', 'agents' => ['null' => []]]);
 
-    expect($manager->adapter())->toBeInstanceOf(NullAdapter::class);
+    expect($manager->agent())->toBeInstanceOf(NullAdapter::class);
 });
 
-test('manager resolves named adapter', function () {
-    $manager = new BatonManager(['default' => 'null', 'adapters' => ['null' => []]]);
+test('manager resolves named agent', function () {
+    $manager = new BatonManager(['default' => 'null', 'agents' => ['null' => []]]);
 
-    expect($manager->adapter('null'))->toBeInstanceOf(NullAdapter::class);
+    expect($manager->agent('null'))->toBeInstanceOf(NullAdapter::class);
 });
 
-test('manager throws for unknown adapter', function () {
-    $manager = new BatonManager(['default' => 'null', 'adapters' => ['null' => []]]);
+test('manager throws for unknown agent', function () {
+    $manager = new BatonManager(['default' => 'null', 'agents' => ['null' => []]]);
 
-    $manager->adapter('nonexistent');
+    $manager->agent('nonexistent');
 })->throws(InvalidArgumentException::class);
 
 test('manager supports extend', function () {
-    $manager = new BatonManager(['default' => 'custom', 'adapters' => ['custom' => ['foo' => 'bar']]]);
+    $manager = new BatonManager(['default' => 'custom', 'agents' => ['custom' => ['foo' => 'bar']]]);
 
     $manager->extend('custom', function (array $config) {
         expect($config)->toBe(['foo' => 'bar']);
         return new NullAdapter($config);
     });
 
-    expect($manager->adapter('custom'))->toBeInstanceOf(NullAdapter::class);
+    expect($manager->agent('custom'))->toBeInstanceOf(NullAdapter::class);
 });
 
 test('manager prompt returns pending process', function () {
-    $manager = new BatonManager(['default' => 'null', 'adapters' => ['null' => []]]);
+    $manager = new BatonManager(['default' => 'null', 'agents' => ['null' => []]]);
 
     expect($manager->prompt('Test'))->toBeInstanceOf(PendingProcess::class);
 });
 
 test('manager spawn returns process directly', function () {
-    $manager = new BatonManager(['default' => 'null', 'adapters' => ['null' => []]]);
+    $manager = new BatonManager(['default' => 'null', 'agents' => ['null' => []]]);
 
     expect($manager->spawn('Test'))->toBeInstanceOf(Process::class);
 });
 
 test('facade resolves manager', function () {
     $this->app['config']->set('baton.default', 'null');
-    $this->app['config']->set('baton.adapters.null', []);
+    $this->app['config']->set('baton.agents.null', []);
 
-    expect(Baton::adapter('null'))->toBeInstanceOf(NullAdapter::class);
+    expect(Baton::agent('null'))->toBeInstanceOf(NullAdapter::class);
 });
 
 test('facade spawn works', function () {
     $this->app['config']->set('baton.default', 'null');
-    $this->app['config']->set('baton.adapters.null', []);
+    $this->app['config']->set('baton.agents.null', []);
 
     $process = Baton::spawn('Test');
 
@@ -66,7 +66,7 @@ test('facade spawn works', function () {
 
 test('facade prompt builder works', function () {
     $this->app['config']->set('baton.default', 'null');
-    $this->app['config']->set('baton.adapters.null', []);
+    $this->app['config']->set('baton.agents.null', []);
 
     $process = Baton::prompt('Fix tests')
         ->model('opus')

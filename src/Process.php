@@ -13,16 +13,16 @@ class Process
 {
     public function __construct(
         public readonly string $id,
-        public readonly string $adapter,
+        public readonly string $agent,
         public readonly array $handle,
         public readonly string $workDir,
         public readonly Carbon $startedAt,
-        protected AgentAdapter $adapterInstance,
+        protected AgentAdapter $agentInstance,
     ) {}
 
     public function isRunning(): bool
     {
-        return $this->adapterInstance->isRunning($this);
+        return $this->agentInstance->isRunning($this);
     }
 
     /**
@@ -31,7 +31,7 @@ class Process
      */
     public function result(): ?Result
     {
-        return $this->adapterInstance->getResult($this);
+        return $this->agentInstance->getResult($this);
     }
 
     public function status(): ProcessStatus
@@ -51,12 +51,12 @@ class Process
 
     public function output(): OutputReader
     {
-        return $this->adapterInstance->readOutput($this);
+        return $this->agentInstance->readOutput($this);
     }
 
     public function kill(): bool
     {
-        return $this->adapterInstance->terminate($this);
+        return $this->agentInstance->terminate($this);
     }
 
     /**
@@ -66,7 +66,7 @@ class Process
     {
         return [
             'id' => $this->id,
-            'adapter' => $this->adapter,
+            'agent' => $this->agent,
             'handle' => $this->handle,
             'work_dir' => $this->workDir,
             'started_at' => $this->startedAt->toIso8601String(),
@@ -76,15 +76,15 @@ class Process
     /**
      * @param array<string, mixed> $data
      */
-    public static function fromArray(array $data, AgentAdapter $adapterInstance): static
+    public static function fromArray(array $data, AgentAdapter $agentInstance): static
     {
         return new static(
             id: $data['id'],
-            adapter: $data['adapter'],
+            agent: $data['agent'],
             handle: $data['handle'],
             workDir: $data['work_dir'],
             startedAt: Carbon::parse($data['started_at']),
-            adapterInstance: $adapterInstance,
+            agentInstance: $agentInstance,
         );
     }
 }

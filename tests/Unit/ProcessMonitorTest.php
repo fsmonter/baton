@@ -11,7 +11,7 @@ use Illuminate\Events\Dispatcher;
 beforeEach(function () {
     $this->storeDir = sys_get_temp_dir().'/baton-monitor-test-'.uniqid();
     $this->store = new FilesystemStore($this->storeDir);
-    $this->manager = new BatonManager(['default' => 'null', 'adapters' => ['null' => []]]);
+    $this->manager = new BatonManager(['default' => 'null', 'agents' => ['null' => []]]);
     $this->manager->setStore($this->store);
 });
 
@@ -33,9 +33,9 @@ test('check returns running status for active process', function () {
 
 test('check returns completed status and removes from store', function () {
     $process = $this->manager->spawn('Test');
-    $adapter = $this->manager->adapter('null');
+    $agent = $this->manager->agent('null');
 
-    $adapter->complete($process, 'Done');
+    $agent->complete($process, 'Done');
 
     $monitor = new ProcessMonitor($this->manager, $this->store);
     $results = $monitor->check($process->id);
@@ -46,9 +46,9 @@ test('check returns completed status and removes from store', function () {
 
 test('check returns failed status and removes from store', function () {
     $process = $this->manager->spawn('Test');
-    $adapter = $this->manager->adapter('null');
+    $agent = $this->manager->agent('null');
 
-    $adapter->fail($process, 'Oops');
+    $agent->fail($process, 'Oops');
 
     $monitor = new ProcessMonitor($this->manager, $this->store);
     $results = $monitor->check($process->id);
@@ -60,9 +60,9 @@ test('check returns failed status and removes from store', function () {
 test('check all processes', function () {
     $p1 = $this->manager->spawn('Test 1');
     $p2 = $this->manager->spawn('Test 2');
-    $adapter = $this->manager->adapter('null');
+    $agent = $this->manager->agent('null');
 
-    $adapter->complete($p1, 'Done');
+    $agent->complete($p1, 'Done');
     // p2 still running
 
     $monitor = new ProcessMonitor($this->manager, $this->store);
@@ -83,8 +83,8 @@ test('check fires ProcessCompleted event', function () {
 
     $this->manager->setEventDispatcher($events);
     $process = $this->manager->spawn('Test');
-    $adapter = $this->manager->adapter('null');
-    $adapter->complete($process, 'Done');
+    $agent = $this->manager->agent('null');
+    $agent->complete($process, 'Done');
 
     $firedEvents = [];
 
@@ -106,8 +106,8 @@ test('check fires ProcessFailed event on agent failure', function () {
 
     $this->manager->setEventDispatcher($events);
     $process = $this->manager->spawn('Test');
-    $adapter = $this->manager->adapter('null');
-    $adapter->fail($process, 'Broke');
+    $agent = $this->manager->agent('null');
+    $agent->fail($process, 'Broke');
 
     $firedEvents = [];
 

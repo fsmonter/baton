@@ -31,11 +31,11 @@ class NullAdapter implements AgentAdapter
 
         $process = new Process(
             id: $id,
-            adapter: 'null',
+            agent: 'null',
             handle: ['simulated' => true],
             workDir: $pending->getDirectory() ?? getcwd(),
             startedAt: Carbon::now(),
-            adapterInstance: $this,
+            agentInstance: $this,
         );
 
         $this->running[$id] = true;

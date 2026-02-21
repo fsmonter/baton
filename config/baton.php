@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'default' => env('BATON_ADAPTER', 'claude-code'),
+    'default' => env('BATON_AGENT', 'claude-code'),
 
     /*
     |--------------------------------------------------------------------------
@@ -21,11 +21,11 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Adapters
+    | Agents
     |--------------------------------------------------------------------------
     */
 
-    'adapters' => [
+    'agents' => [
         'claude-code' => [
             'binary' => env('BATON_CLAUDE_BINARY', 'claude'),
             'model' => env('BATON_CLAUDE_MODEL', 'opus'),

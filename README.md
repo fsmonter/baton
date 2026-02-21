@@ -90,22 +90,22 @@ use Baton\Events\ProcessFailed;
 Event::listen(ProcessSpawned::class, fn ($e) => /* ... */);
 ```
 
-## Adapters
+## Agents
 
-| Adapter | Runtime | Status |
-|---------|---------|--------|
+| Agent | Runtime | Status |
+|-------|---------|--------|
 | `claude-code` | Claude Code CLI | ✅ |
 | `null` | Testing | ✅ |
 | `docker` | Any agent in Docker | 🔜 |
 | `e2b` | E2B cloud sandbox | 🔜 |
 
-### Custom Adapters
+### Custom Agents
 
 ```php
 use Baton\Baton;
 
-Baton::extend('my-adapter', function (array $config) {
-    return new MyCustomAdapter($config);
+Baton::extend('my-agent', function (array $config) {
+    return new MyCustomAgent($config);
 });
 ```
 
@@ -114,9 +114,9 @@ Baton::extend('my-adapter', function (array $config) {
 ```php
 // config/baton.php
 return [
-    'default' => env('BATON_ADAPTER', 'claude-code'),
+    'default' => env('BATON_AGENT', 'claude-code'),
 
-    'adapters' => [
+    'agents' => [
         'claude-code' => [
             'binary' => env('BATON_CLAUDE_BINARY', 'claude'),
             'model' => env('BATON_CLAUDE_MODEL', 'sonnet'),
@@ -130,7 +130,7 @@ return [
 
 ## Testing
 
-Use the `null` adapter in tests:
+Use the `null` agent in tests:
 
 ```php
 use Baton\Baton;
@@ -140,10 +140,10 @@ use Baton\Adapters\NullAdapter;
 config(['baton.default' => 'null']);
 
 $process = Baton::spawn('Test prompt');
-$adapter = Baton::adapter('null');
+$agent = Baton::agent('null');
 
 // Simulate completion
-$adapter->complete($process, 'Task done!');
+$agent->complete($process, 'Task done!');
 
 expect($process->result()->success)->toBeTrue();
 expect($process->result()->output)->toBe('Task done!');

@@ -46,7 +46,7 @@ class ClaudeCodeAdapter implements AgentAdapter
 
         $process = new Process(
             id: $id,
-            adapter: 'claude-code',
+            agent: 'claude-code',
             handle: [
                 'pid' => (int) $pid,
                 'output_path' => $outputPath,
@@ -57,7 +57,7 @@ class ClaudeCodeAdapter implements AgentAdapter
             ],
             workDir: $workDir,
             startedAt: Carbon::now(),
-            adapterInstance: $this,
+            agentInstance: $this,
         );
 
         return $process;

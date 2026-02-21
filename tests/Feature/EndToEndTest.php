@@ -8,7 +8,7 @@ use Baton\Usage;
 test('spawns a real claude process and gets a result', function () {
     config([
         'baton.default' => 'claude-code',
-        'baton.adapters.claude-code' => [
+        'baton.agents.claude-code' => [
             'binary' => 'claude',
             'model' => 'haiku',
             'max_turns' => 1,
@@ -45,7 +45,7 @@ test('spawns a real claude process and gets a result', function () {
 test('spawns a process with structured output', function () {
     config([
         'baton.default' => 'claude-code',
-        'baton.adapters.claude-code' => [
+        'baton.agents.claude-code' => [
             'binary' => 'claude',
             'model' => 'haiku',
             'max_turns' => 3,
@@ -88,7 +88,7 @@ test('spawns a process with structured output', function () {
 test('process can be killed while running', function () {
     config([
         'baton.default' => 'claude-code',
-        'baton.adapters.claude-code' => [
+        'baton.agents.claude-code' => [
             'binary' => 'claude',
             'model' => 'haiku',
             'max_turns' => 50,

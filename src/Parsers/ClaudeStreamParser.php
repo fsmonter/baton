@@ -8,13 +8,13 @@ use Baton\Output\ErrorEvent;
 use Baton\Output\MessageEvent;
 use Baton\Output\OutputEvent;
 use Baton\Output\ResultEvent;
+use Baton\Output\SystemEvent;
 use Baton\Output\ToolResultEvent;
 use Baton\Output\ToolUseEvent;
 use Baton\Usage;
 
 class ClaudeStreamParser
 {
-    protected string $textBuffer = '';
     protected array $seenToolIds = [];
     protected Usage $usage;
 
@@ -34,7 +34,7 @@ class ClaudeStreamParser
         $type = $data['type'] ?? null;
 
         return match ($type) {
-            'system' => null, // skip system events in v2
+            'system' => $this->parseSystem($data),
             'stream_event' => $this->parseStreamEvent($data),
             'tool_use' => $this->parseToolUse($data),
             'tool_result' => $this->parseToolResult($data),
@@ -46,24 +46,8 @@ class ClaudeStreamParser
         };
     }
 
-    public function flush(): array
-    {
-        $events = [];
-
-        if ($this->textBuffer !== '') {
-            $events[] = new MessageEvent(
-                content: $this->textBuffer,
-                role: 'assistant',
-            );
-            $this->textBuffer = '';
-        }
-
-        return $events;
-    }
-
     public function reset(): void
     {
-        $this->textBuffer = '';
         $this->seenToolIds = [];
         $this->usage = new Usage();
     }
@@ -71,6 +55,27 @@ class ClaudeStreamParser
     public function getUsage(): ?Usage
     {
         return $this->usage->totalTokens() > 0 ? $this->usage : null;
+    }
+
+    protected function parseSystem(array $data): SystemEvent
+    {
+        $tools = $data['tools'] ?? [];
+
+        $mcpServers = collect($tools)
+            ->filter(fn (string $tool) => str_starts_with($tool, 'mcp__'))
+            ->map(fn (string $tool) => explode('__', $tool)[1] ?? null)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return new SystemEvent(
+            model: $data['model'] ?? 'unknown',
+            version: $data['version'] ?? null,
+            tools: $tools,
+            mcpServers: $mcpServers,
+            raw: json_encode($data),
+        );
     }
 
     protected function parseStreamEvent(array $data): OutputEvent|array|null
@@ -91,7 +96,11 @@ class ClaudeStreamParser
         $delta = $event['delta'] ?? [];
 
         if (($delta['type'] ?? '') === 'text_delta') {
-            $this->textBuffer .= $delta['text'] ?? '';
+            $text = $delta['text'] ?? '';
+
+            if ($text !== '') {
+                return new MessageEvent(content: $text, role: 'assistant');
+            }
         }
 
         return null;
@@ -126,7 +135,7 @@ class ClaudeStreamParser
         return null;
     }
 
-    protected function parseToolUse(array $data): OutputEvent|array|null
+    protected function parseToolUse(array $data): ?ToolUseEvent
     {
         $toolId = $data['id'] ?? null;
 
@@ -138,17 +147,13 @@ class ClaudeStreamParser
             $this->seenToolIds[$toolId] = true;
         }
 
-        $events = $this->flush();
-
-        $events[] = new ToolUseEvent(
+        return new ToolUseEvent(
             tool: $data['name'] ?? 'unknown',
             input: $data['input'] ?? [],
             output: null,
             toolId: $toolId,
             raw: json_encode($data),
         );
-
-        return count($events) === 1 ? $events[0] : $events;
     }
 
     protected function parseToolResult(array $data): ToolResultEvent
@@ -182,9 +187,6 @@ class ClaudeStreamParser
                     $this->seenToolIds[$toolId] = true;
                 }
 
-                $flushed = $this->flush();
-                $events = [...$events, ...$flushed];
-
                 $events[] = new ToolUseEvent(
                     tool: $block['name'] ?? 'unknown',
                     input: $block['input'] ?? [],
@@ -192,8 +194,6 @@ class ClaudeStreamParser
                     toolId: $toolId,
                     raw: json_encode($block),
                 );
-            } elseif ($blockType === 'text') {
-                $this->textBuffer .= $block['text'] ?? '';
             }
         }
 
@@ -221,10 +221,8 @@ class ClaudeStreamParser
         return count($events) === 0 ? null : (count($events) === 1 ? $events[0] : $events);
     }
 
-    protected function parseResult(array $data): OutputEvent|array
+    protected function parseResult(array $data): ResultEvent
     {
-        $events = $this->flush();
-
         $resultUsage = $data['usage'] ?? [];
         if ($resultUsage) {
             $this->usage = new Usage(
@@ -239,7 +237,7 @@ class ClaudeStreamParser
         $subtype = $data['subtype'] ?? 'success';
         $isError = ($data['is_error'] ?? false) || $subtype === 'error_max_structured_output_retries';
 
-        $events[] = new ResultEvent(
+        return new ResultEvent(
             success: ! $isError,
             subtype: $subtype,
             structuredOutput: $data['structured_output'] ?? null,
@@ -250,8 +248,6 @@ class ClaudeStreamParser
             error: $isError ? ($data['error'] ?? $subtype) : null,
             raw: json_encode($data),
         );
-
-        return count($events) === 1 ? $events[0] : $events;
     }
 
     protected function parseError(array $data): ErrorEvent

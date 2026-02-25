@@ -88,11 +88,10 @@ test('parser parses error events', function () {
         ->and($result->code)->toBe(500);
 });
 
-test('parser flushes buffered text as message event', function () {
+test('parser emits message events from text deltas', function () {
     $parser = new ClaudeStreamParser();
 
-    // Feed a stream event with text delta
-    $parser->parse(json_encode([
+    $event1 = $parser->parse(json_encode([
         'type' => 'stream_event',
         'event' => [
             'type' => 'content_block_delta',
@@ -100,7 +99,7 @@ test('parser flushes buffered text as message event', function () {
         ],
     ]));
 
-    $parser->parse(json_encode([
+    $event2 = $parser->parse(json_encode([
         'type' => 'stream_event',
         'event' => [
             'type' => 'content_block_delta',
@@ -108,11 +107,10 @@ test('parser flushes buffered text as message event', function () {
         ],
     ]));
 
-    $flushed = $parser->flush();
-
-    expect($flushed)->toHaveCount(1)
-        ->and($flushed[0])->toBeInstanceOf(MessageEvent::class)
-        ->and($flushed[0]->content)->toBe('Hello World');
+    expect($event1)->toBeInstanceOf(MessageEvent::class)
+        ->and($event1->content)->toBe('Hello ')
+        ->and($event2)->toBeInstanceOf(MessageEvent::class)
+        ->and($event2->content)->toBe('World');
 });
 
 test('parser reset clears state', function () {

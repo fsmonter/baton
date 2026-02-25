@@ -8,12 +8,6 @@ Baton is a thin Laravel package for spawning and managing CLI agent processes.
 composer require fsmonter/baton
 ```
 
-Publish the config (optional):
-
-```bash
-php artisan vendor:publish --tag=baton-config
-```
-
 ## Quick Start
 
 ```php

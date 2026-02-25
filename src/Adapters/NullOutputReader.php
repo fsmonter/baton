@@ -21,6 +21,11 @@ class NullOutputReader implements OutputReader
         }
     }
 
+    public function follow(): Generator
+    {
+        yield from $this->events();
+    }
+
     public function tail(int $lines = 50): string
     {
         $messages = array_filter($this->events, fn ($e) => $e instanceof MessageEvent);

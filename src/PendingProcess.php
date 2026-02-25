@@ -14,6 +14,11 @@ class PendingProcess
     protected ?int $maxTurnsCount = null;
     protected ?int $timeoutSeconds = null;
     protected ?array $jsonSchema = null;
+    protected ?string $mcpConfigPath = null;
+    protected ?string $permissionModeName = null;
+    protected ?array $allowedToolsList = null;
+    protected ?array $envVariables = null;
+    protected ?string $settingSourcesValue = null;
 
     public function __construct(
         protected BatonManager $manager,
@@ -75,6 +80,41 @@ class PendingProcess
         return $this;
     }
 
+    public function mcpConfig(string $path): static
+    {
+        $this->mcpConfigPath = $path;
+
+        return $this;
+    }
+
+    public function permissionMode(string $mode): static
+    {
+        $this->permissionModeName = $mode;
+
+        return $this;
+    }
+
+    public function allowedTools(array $tools): static
+    {
+        $this->allowedToolsList = $tools;
+
+        return $this;
+    }
+
+    public function env(array $variables): static
+    {
+        $this->envVariables = $variables;
+
+        return $this;
+    }
+
+    public function settingSources(string $sources): static
+    {
+        $this->settingSourcesValue = $sources;
+
+        return $this;
+    }
+
     public function spawn(): Process
     {
         return $this->manager->spawnProcess($this);
@@ -89,4 +129,9 @@ class PendingProcess
     public function getMaxTurns(): ?int { return $this->maxTurnsCount; }
     public function getTimeout(): ?int { return $this->timeoutSeconds; }
     public function getSchema(): ?array { return $this->jsonSchema; }
+    public function getMcpConfig(): ?string { return $this->mcpConfigPath; }
+    public function getPermissionMode(): ?string { return $this->permissionModeName; }
+    public function getAllowedTools(): ?array { return $this->allowedToolsList; }
+    public function getEnv(): ?array { return $this->envVariables; }
+    public function getSettingSources(): ?string { return $this->settingSourcesValue; }
 }

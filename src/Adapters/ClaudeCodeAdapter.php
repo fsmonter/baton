@@ -107,6 +107,7 @@ class ClaudeCodeAdapter implements AgentAdapter
         return new ClaudeCodeOutputReader(
             $process->handle['output_path'] ?? null,
             $this->parser,
+            fn () => $this->isRunning($process),
         );
     }
 
@@ -304,7 +305,7 @@ trap 'cleanup' EXIT
 # Allow spawning from within other Claude sessions
 unset CLAUDECODE
 
-cd {$workDir}
+{$this->buildEnvExports($pending)}cd {$workDir}
 {$binary} {$command} < {$promptPath} > {$outputPath} 2>&1
 BASH;
 
@@ -312,6 +313,22 @@ BASH;
         chmod($scriptPath, 0755);
 
         return $scriptPath;
+    }
+
+    protected function buildEnvExports(PendingProcess $pending): string
+    {
+        $env = $pending->getEnv();
+
+        if (! $env) {
+            return '';
+        }
+
+        $lines = [];
+        foreach ($env as $key => $value) {
+            $lines[] = 'export '.escapeshellarg($key).'='.escapeshellarg($value);
+        }
+
+        return implode("\n", $lines)."\n";
     }
 
     protected function buildCommandString(PendingProcess $pending, ?string $schemaPath): string
@@ -322,8 +339,11 @@ BASH;
             $parts[] = '--include-partial-messages';
         }
 
-        $parts[] = '--setting-sources';
-        $parts[] = escapeshellarg($this->config['setting_sources'] ?? 'local');
+        $settingSources = $pending->getSettingSources() ?? ($this->config['setting_sources'] ?? null);
+        if ($settingSources) {
+            $parts[] = '--setting-sources';
+            $parts[] = escapeshellarg($settingSources);
+        }
 
         if ($this->config['disable_slash_commands'] ?? true) {
             $parts[] = '--disable-slash-commands';
@@ -354,6 +374,23 @@ BASH;
         if ($model) {
             $parts[] = '--model';
             $parts[] = escapeshellarg($model);
+        }
+
+        if ($pending->getMcpConfig()) {
+            $parts[] = '--mcp-config';
+            $parts[] = escapeshellarg($pending->getMcpConfig());
+        }
+
+        $parts[] = '--strict-mcp-config';
+
+        if ($pending->getPermissionMode()) {
+            $parts[] = '--permission-mode';
+            $parts[] = escapeshellarg($pending->getPermissionMode());
+        }
+
+        foreach ($pending->getAllowedTools() ?? [] as $pattern) {
+            $parts[] = '--allowedTools';
+            $parts[] = escapeshellarg($pattern);
         }
 
         return implode(" \\\n    ", $parts);

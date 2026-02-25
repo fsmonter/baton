@@ -11,5 +11,8 @@ interface OutputReader
     /** @return Generator<\Baton\Output\OutputEvent> */
     public function events(): Generator;
 
+    /** @return Generator<\Baton\Output\OutputEvent> */
+    public function follow(): Generator;
+
     public function tail(int $lines = 50): string;
 }

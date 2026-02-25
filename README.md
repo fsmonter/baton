@@ -1,7 +1,5 @@
 # Baton
 
-**Dispatch autonomous AI agents like you dispatch queue jobs.**
-
 Baton is a thin Laravel package for spawning and managing CLI agent processes.
 
 ## Installation
